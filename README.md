@@ -1,35 +1,56 @@
-# Blue/Green Deployment with Nginx
+## Stage 3: Observability & Alerts
 
-## Setup
+### Additional Setup
 
-1. Clone this repo
-2. Copy `.env.example` to `.env`
-3. Run: `docker-compose up -d`
+1. Create a Slack webhook (see runbook.md)
+2. Update `.env` with your `SLACK_WEBHOOK_URL`
 
-## Testing
+### Testing Alerts
 
-### Normal operation (Blue active):
+#### Test Failover Alert
 ```bash
-curl http://localhost:8080/version
+# Start chaos on Blue
+curl -X POST "http://localhost:8081/chaos/start?mode=error"
+
+# Generate traffic
+for i in {1..10}; do curl http://localhost:8080/version; sleep 0.5; done
+
+# Check Slack for "Failover Detected" alert
 ```
 
-### Trigger chaos on Blue:
+#### Test Error Rate Alert
 ```bash
-curl -X POST http://localhost:8081/chaos/start?mode=error
+# Ensure chaos is running
+curl -X POST "http://localhost:8081/chaos/start?mode=error"
+
+# Generate 250 requests
+for i in {1..250}; do 
+  curl -s http://localhost:8080/version > /dev/null
+done
+
+# Check Slack for "High Error Rate" alert
 ```
 
-### Verify Green takes over:
+#### Stop Chaos
 ```bash
-curl http://localhost:8080/version
-# Should show X-App-Pool: green
+curl -X POST "http://localhost:8081/chaos/stop"
 ```
 
-### Stop chaos:
+### Viewing Logs
+
+**Watcher logs:**
 ```bash
-curl -X POST http://localhost:8081/chaos/stop
+docker-compose logs -f alert_watcher
 ```
 
-## Ports
-- 8080: Nginx (main entrance)
-- 8081: Blue direct
-- 8082: Green direct
+**Nginx logs:**
+```bash
+docker-compose exec nginx cat /var/log/nginx/access.log
+```
+
+### Screenshots Required
+
+For submission, capture:
+1. Slack alert showing failover event
+2. Slack alert showing high error rate
+3. Container logs showing structured Nginx log format

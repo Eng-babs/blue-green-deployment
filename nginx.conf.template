@@ -3,44 +3,44 @@ events {
 }
 
 http {
-    # This defines our two ice cream trucks (upstreams)
+    # Custom log format with pool and upstream info
+    log_format detailed '$remote_addr - $remote_user [$time_local] '
+                       '"$request" $status $body_bytes_sent '
+                       '"$http_referer" "$http_user_agent" '
+                       'pool=$upstream_http_x_app_pool '
+                       'release=$upstream_http_x_release_id '
+                       'upstream_status=$upstream_status '
+                       'upstream=$upstream_addr '
+                       'request_time=$request_time '
+                       'upstream_time=$upstream_response_time';
+
+    # Write logs to a shared volume
+    access_log /var/log/nginx/access.log detailed;
+    error_log /var/log/nginx/error.log warn;
+
     upstream app_backend {
-        # If ACTIVE_POOL is "blue", Blue is primary
         server app_blue:3000 max_fails=1 fail_timeout=5s;
         server app_green:3000 backup;
-    }
-
-    # If you switch to green, this would be used instead
-    upstream app_backend_green {
-        server app_green:3000 max_fails=1 fail_timeout=5s;
-        server app_blue:3000 backup;
     }
 
     server {
         listen 80;
 
         location / {
-            # Route based on which pool is active
             proxy_pass http://app_backend;
             
-            # Fast timeouts so we detect problems quickly
             proxy_connect_timeout 2s;
             proxy_send_timeout 3s;
             proxy_read_timeout 3s;
             
-            # Retry on errors (switch trucks if one breaks!)
             proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
             proxy_next_upstream_tries 2;
             
-            # Forward the special headers from the app
             proxy_pass_request_headers on;
-            
-            # Make sure response headers reach the client
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }
 
-        # Health check endpoint
         location /healthz {
             proxy_pass http://app_backend/healthz;
             proxy_connect_timeout 1s;
@@ -48,3 +48,5 @@ http {
         }
     }
 }
+
+

@@ -1,24 +1,26 @@
 services:
-  # The traffic cop (Nginx)
   nginx:
     image: nginx:alpine
     container_name: nginx_proxy
     ports:
-      - "8080:80"  # Public entrance
+      - "8080:80"
     volumes:
       - ./nginx.conf.template:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
     depends_on:
       - app_blue
       - app_green
     networks:
       - app_network
-
-  # Blue ice cream truck
+    command: >
+      sh -c "rm -f /var/log/nginx/access.log /var/log/nginx/error.log &&
+           touch /var/log/nginx/access.log /var/log/nginx/error.log &&
+           nginx -g 'daemon off;'"
   app_blue:
     image: ${BLUE_IMAGE}
     container_name: app_blue
     ports:
-      - "8081:3000"  # Direct access for testing
+      - "8081:3000"
     environment:
       - APP_POOL=blue
       - RELEASE_ID=${RELEASE_ID_BLUE}
@@ -31,12 +33,11 @@ services:
       timeout: 3s
       retries: 3
 
-  # Green ice cream truck
   app_green:
     image: ${GREEN_IMAGE}
     container_name: app_green
     ports:
-      - "8082:3000"  # Direct access for testing
+      - "8082:3000"
     environment:
       - APP_POOL=green
       - RELEASE_ID=${RELEASE_ID_GREEN}
@@ -48,6 +49,29 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+
+  alert_watcher:
+    image: python:3.11-slim
+    container_name: alert_watcher
+    volumes:
+      - ./watcher.py:/app/watcher.py:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      - nginx_logs:/var/log/nginx:ro
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD}
+      - WINDOW_SIZE=${WINDOW_SIZE}
+      - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC}
+    working_dir: /app
+    command: >
+      sh -c "pip install -q -r requirements.txt && python -u watcher.py"
+    depends_on:
+      - nginx
+    networks:
+      - app_network
+
+volumes:
+  nginx_logs:
 
 networks:
   app_network:
